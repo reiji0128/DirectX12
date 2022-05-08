@@ -117,12 +117,12 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(DXTEX_DIR);C:\Users\student\Desktop\DirectX12\DirectX12\DirectXTex-main\DirectXTex</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(DXTEX_DIR);../DirectXTex-main\DirectXTex</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(DXTEX_DIR)\Bin\Desktop_2019_Win10\x64\Debug;C:\Users\student\Desktop\DirectX12\DirectX12\DirectXTex-main\DirectXTex\Bin\Desktop_2019_Win10\x64\Debug</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(DXTEX_DIR)\Bin\Desktop_2019_Win10\x64\Debug;../DirectXTex-main\DirectXTex\Bin\Desktop_2019_Win10\x64\Debug</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">

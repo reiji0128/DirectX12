@@ -243,23 +243,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	heapprop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
 	heapprop.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
 
-	D3D12_RESOURCE_DESC resdesc = {};
+	D3D12_RESOURCE_DESC resDesc = {};
 
-	resdesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	resdesc.Width = sizeof(vertices);    // 頂点情報が入るだけのサイズ
-	resdesc.Height = 1;
-	resdesc.DepthOrArraySize = 1;
-	resdesc.MipLevels = 1;
-	resdesc.Format = DXGI_FORMAT_UNKNOWN;
-	resdesc.SampleDesc.Count = 1;
-	resdesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-	resdesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	resDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	resDesc.Width = sizeof(vertices);    // 頂点情報が入るだけのサイズ
+	resDesc.Height = 1;
+	resDesc.DepthOrArraySize = 1;
+	resDesc.MipLevels = 1;
+	resDesc.Format = DXGI_FORMAT_UNKNOWN;
+	resDesc.SampleDesc.Count = 1;
+	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	resDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 
 	ID3D12Resource* vertBuff = nullptr;
 
 	result = _dev->CreateCommittedResource(&heapprop, 
 	                                       D3D12_HEAP_FLAG_NONE, 
-	                                       &resdesc, 
+	                                       &resDesc, 
 	                                       D3D12_RESOURCE_STATE_GENERIC_READ, 
 	                                       nullptr, 
 	                                       IID_PPV_ARGS(&vertBuff));
@@ -284,10 +284,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	ID3D12Resource* idxBuff = nullptr;
 	// 設定はバッファーのサイズ以外、頂点バッファーの設定を使いまわす
-	resdesc.Width = sizeof(indices);
+	resDesc.Width = sizeof(indices);
 	result = _dev->CreateCommittedResource(&heapprop, 
 		                                   D3D12_HEAP_FLAG_NONE, 
-		                                   &resdesc, 
+		                                   &resDesc, 
 		                                   D3D12_RESOURCE_STATE_GENERIC_READ, 
 		                                   nullptr, 
 		                                   IID_PPV_ARGS(&idxBuff));
