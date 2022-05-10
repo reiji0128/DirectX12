@@ -22,6 +22,17 @@
 
 using namespace DirectX;
 
+// PMD構造体
+struct PMD_VERTEX
+{
+	XMFLOAT3 pos;                // 頂点座標       : 12バイト
+	XMFLOAT3 normal;             // 法線ベクトル   : 12バイト
+	XMFLOAT2 ub;                 // uv座標         :  8バイト
+	unsigned short boneNo[2];    // ボーン番号     :  4バイト
+	unsigned char boneWeight;    // ボーン影響度   :  1バイト
+	unsigned char edgeFlg;       // 輪郭線フラグ   :  1バイト
+};                               //              合計38バイト
+
 ///@brief コンソール画面にフォーマット付き文字列を表示
 ///@param format フォーマット(%dとか%fとかの)
 ///@param 可変長引数
@@ -202,17 +213,36 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		XMFLOAT2 uv;//UV座標
 	};
 
-	Vertex vertices[] = {
-		{{-1.f,-1.f,0.0f},{0.0f,1.0f} },//左下
-		{{-1.f,1.f,0.0f} ,{0.0f,0.0f}},//左上
-		{{1.f,-1.f,0.0f} ,{1.0f,1.0f}},//右下
-		{{1.f,1.f,0.0f} ,{1.0f,0.0f}},//右上
+	// PMDヘッダー構造体
+	struct PMDHeader
+	{
+		float version;        // 例：00 00 80 3F == 1.00
+		char model_name[20];  // モデル名
+		char comment[256];    // モデルコメント
 	};
+
+	char signature[3] = {};   // シグネチャ
+	PMDHeader* pmdheader;
+	FILE* fp;
+	fopen_s(&fp, "Model/初音ミク.pmd", "rb");
+
+	fread(signature, sizeof(signature), 1, fp);
+	fread(&pmdheader, sizeof(pmdheader), 1, fp);
+
+	unsigned int vertNum;                        // 頂点数
+	fread(&vertNum, sizeof(vertNum), 1, fp);
+	
+	constexpr size_t pmdvertex_size = 38;                             // 頂点1つあたりのサイズ
+	std::vector<unsigned char> vertices(vertNum* pmdvertex_size);     // バッファーの確保
+	fread(vertices.data(), vertices.size(), 1, fp);                   // 読み込み
+
+	unsigned int indicesNum;                  // インデックス数
+	fread(&indicesNum, sizeof(indicesNum), 1, fp);
 
 	//UPLOAD(確保は可能)
 	ID3D12Resource* vertBuff = nullptr;
 	auto heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	auto resDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(vertices));
+	auto resDesc = CD3DX12_RESOURCE_DESC::Buffer(vertices.size());
 	result = _dev->CreateCommittedResource(
 		&heapProp,
 		D3D12_HEAP_FLAG_NONE,
@@ -221,25 +251,24 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		nullptr,
 		IID_PPV_ARGS(&vertBuff));
 
-	Vertex* vertMap = nullptr;
+	unsigned char* vertMap = nullptr;
 	result = vertBuff->Map(0, nullptr, (void**)&vertMap);
-
 	std::copy(std::begin(vertices), std::end(vertices), vertMap);
-
 	vertBuff->Unmap(0, nullptr);
 
 	D3D12_VERTEX_BUFFER_VIEW vbView = {};
-	vbView.BufferLocation = vertBuff->GetGPUVirtualAddress();//バッファの仮想アドレス
-	vbView.SizeInBytes = sizeof(vertices);//全バイト数
-	vbView.StrideInBytes = sizeof(vertices[0]);//1頂点あたりのバイト数
-
-	unsigned short indices[] = { 0,1,2, 2,1,3 };
+	vbView.BufferLocation = vertBuff->GetGPUVirtualAddress();   //バッファの仮想アドレス
+	vbView.SizeInBytes = vertices.size();                       //全バイト数
+	vbView.StrideInBytes = pmdvertex_size;                      //1頂点あたりのバイト数
+	std::vector<unsigned short> indices(indicesNum);
+	fread(indices.data(), indices.size() * sizeof(indices[0]), 1, fp);
+	fclose(fp);
 
 	ID3D12Resource* idxBuff = nullptr;
 	//設定は、バッファのサイズ以外頂点バッファの設定を使いまわして
 	//OKだと思います。
 	heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	resDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(indices));
+	resDesc = CD3DX12_RESOURCE_DESC::Buffer(indices.size() * sizeof(indices[0]));
 	result = _dev->CreateCommittedResource(
 		&heapProp,
 		D3D12_HEAP_FLAG_NONE,
@@ -331,7 +360,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
 		{ "POSITION",0,DXGI_FORMAT_R32G32B32_FLOAT,0,D3D12_APPEND_ALIGNED_ELEMENT,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0 },
+		{ "NORMAL",0,DXGI_FORMAT_R32G32B32_FLOAT,0,D3D12_APPEND_ALIGNED_ELEMENT,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0 },
 		{ "TEXCOORD",0,DXGI_FORMAT_R32G32_FLOAT,0,D3D12_APPEND_ALIGNED_ELEMENT,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0 },
+		{ "BONE_NO",0,DXGI_FORMAT_R16G16_UINT,0,D3D12_APPEND_ALIGNED_ELEMENT,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0 },
+		{ "TEXCOORD",0,DXGI_FORMAT_R8_UINT,0,D3D12_APPEND_ALIGNED_ELEMENT,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0 },
+		{ "TEXCOORD",0,DXGI_FORMAT_R8_UINT,0,D3D12_APPEND_ALIGNED_ELEMENT,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0 },
 	};
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC gpipeline = {};
@@ -514,16 +547,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		static_cast<UINT>(img->slicePitch)//全サイズ
 	);
 
-	//定数バッファ作成
+	// 定数バッファ作成
+	// ワールド行列
 	auto worldMat = XMMatrixRotationY(XM_PIDIV4);
-	XMFLOAT3 eye(0, 0, -5);
-	XMFLOAT3 target(0, 0, 0);
+
+	// ビュー行列
+	XMFLOAT3 eye(0, 10, -15);
+	XMFLOAT3 target(0, 10, 0);
 	XMFLOAT3 up(0, 1, 0);
 	auto viewMat = XMMatrixLookAtLH(XMLoadFloat3(&eye), XMLoadFloat3(&target), XMLoadFloat3(&up));
+	
+	// プロジェクション行列
 	auto projMat = XMMatrixPerspectiveFovLH(XM_PIDIV2,//画角は90°
 		static_cast<float>(window_width) / static_cast<float>(window_height),//アス比
 		1.0f,//近い方
-		10.0f//遠い方
+		100.0f//遠い方
 	);
 	ID3D12Resource* constBuff = nullptr;
 	heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
@@ -597,39 +635,29 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		//バックバッファのインデックスを取得
 		auto bbIdx = _swapchain->GetCurrentBackBufferIndex();
 
-		//D3D12_RESOURCE_BARRIER BarrierDesc = {};
-		//BarrierDesc.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-		//BarrierDesc.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-		//BarrierDesc.Transition.pResource = _backBuffers[bbIdx];
-		//BarrierDesc.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-		//BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
-		//BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-		auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(_backBuffers[bbIdx],
-			D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-		_cmdList->ResourceBarrier(1, &barrier);
+		D3D12_RESOURCE_BARRIER BarrierDesc = {};
+		BarrierDesc.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+		BarrierDesc.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+		BarrierDesc.Transition.pResource = _backBuffers[bbIdx];
+		BarrierDesc.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+		BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+		BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
 
 		_cmdList->SetPipelineState(_pipelinestate);
-
 
 		//レンダーターゲットを指定
 		auto rtvH = rtvHeaps->GetCPUDescriptorHandleForHeapStart();
 		rtvH.ptr += bbIdx * _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 		_cmdList->OMSetRenderTargets(1, &rtvH, false, nullptr);
 
+		_cmdList->ResourceBarrier(1, &BarrierDesc);
 		//画面クリア
-
-		float r, g, b;
-		r = (float)(0xff & frame >> 16) / 255.0f;
-		g = (float)(0xff & frame >> 8) / 255.0f;
-		b = (float)(0xff & frame >> 0) / 255.0f;
-		float clearColor[] = { r,g,b,1.0f };//黄色
+		float clearColor[] = { 1.0f,1.0f,1.0f,1.0f }; // 白色
 		_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
-		++frame;
 		_cmdList->RSSetViewports(1, &viewport);
 		_cmdList->RSSetScissorRects(1, &scissorrect);
-		_cmdList->SetGraphicsRootSignature(rootsignature);
 
-		_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
 		_cmdList->IASetVertexBuffers(0, 1, &vbView);
 		_cmdList->IASetIndexBuffer(&ibView);
 
@@ -637,15 +665,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		_cmdList->SetDescriptorHeaps(1, &basicDescHeap);
 		_cmdList->SetGraphicsRootDescriptorTable(0, basicDescHeap->GetGPUDescriptorHandleForHeapStart());
 
-		//auto heapHandle=basicDescHeap->GetGPUDescriptorHandleForHeapStart();
-		//heapHandle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		//_cmdList->SetGraphicsRootDescriptorTable(1, heapHandle);
+		_cmdList->DrawIndexedInstanced(indicesNum, 1, 0, 0, 0);
 
-		_cmdList->DrawIndexedInstanced(6, 1, 0, 0, 0);
-		barrier = CD3DX12_RESOURCE_BARRIER::Transition(_backBuffers[bbIdx],
-			D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-		_cmdList->ResourceBarrier(1,
-			&barrier);
+		BarrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+		BarrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+
+		_cmdList->ResourceBarrier(1, &BarrierDesc);
 
 		//命令のクローズ
 		_cmdList->Close();

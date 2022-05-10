@@ -19,6 +19,8 @@
 
 using namespace DirectX;
 
+struct PMD
+
 // @brief コンソール画面にフォーマット付き文字列を表示
 // @param format フォーマット(%dとか%fとかの)
 // @param 可変長引数
