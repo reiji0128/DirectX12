@@ -26,7 +26,7 @@ struct PMD_VERTEX
 {
 	XMFLOAT3 pos;                // 頂点座標       : 12バイト
 	XMFLOAT3 normal;             // 法線ベクトル   : 12バイト
-	XMFLOAT2 ub;                 // uv座標         :  8バイト
+	XMFLOAT2 uv;                 // uv座標         :  8バイト
 	unsigned short boneNo[2];    // ボーン番号     :  4バイト
 	unsigned char boneWeight;    // ボーン影響度   :  1バイト
 	unsigned char edgeFlg;       // 輪郭線フラグ   :  1バイト
@@ -119,7 +119,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		D3D_FEATURE_LEVEL_11_1,
 		D3D_FEATURE_LEVEL_11_0,
 	};
-	result = CreateDXGIFactory1(IID_PPV_ARGS(&_dxgiFactory));
+	result = CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&_dxgiFactory));
 	std::vector <IDXGIAdapter*> adapters;
 	IDXGIAdapter* tmpAdapter = nullptr;
 	for (int i = 0; _dxgiFactory->EnumAdapters(i, &tmpAdapter) != DXGI_ERROR_NOT_FOUND; ++i) 
@@ -140,8 +140,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	//Direct3Dデバイスの初期化
 	D3D_FEATURE_LEVEL featureLevel;
-	for (auto l : levels) {
-		if (D3D12CreateDevice(tmpAdapter, l, IID_PPV_ARGS(&_dev)) == S_OK) {
+	for (auto l : levels)
+	{
+		if (D3D12CreateDevice(tmpAdapter, l, IID_PPV_ARGS(&_dev)) == S_OK)
+		{
 			featureLevel = l;
 			break;
 		}
@@ -149,7 +151,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	result = _dev->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_cmdAllocator));
 	result = _dev->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, _cmdAllocator, nullptr, IID_PPV_ARGS(&_cmdList));
-	//_cmdList->Close();
+	
 	D3D12_COMMAND_QUEUE_DESC cmdQueueDesc = {};
 	cmdQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;//タイムアウトなし
 	cmdQueueDesc.NodeMask = 0;
@@ -193,17 +195,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	//SRGBレンダーターゲットビュー設定
 	D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
-	//↓これやると色味はだいぶマシになるが、バックバッファとの
-	//フォーマットの食い違いによりDebugLayerにエラーが出力される
 	rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
 	rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 
 
-	for (size_t i = 0; i < swcDesc.BufferCount; ++i) {
+	for (size_t i = 0; i < swcDesc.BufferCount; ++i)
+	{
 		result = _swapchain->GetBuffer(static_cast<UINT>(i), IID_PPV_ARGS(&_backBuffers[i]));
 		_dev->CreateRenderTargetView(_backBuffers[i], &rtvDesc, handle);
 		handle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 	}
+
+	// 深度バッファの作成
+	// 深度バッファの仕様
+	//D3D12_RESOURCE_DESC depthResDesc = {};
+	//depthResDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+
 	ID3D12Fence* _fence = nullptr;
 	UINT64 _fenceVal = 0;
 	result = _dev->CreateFence(_fenceVal, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence));
@@ -415,7 +422,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	gpipeline.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
 	
 	// ブレンド設定
-	gpipeline.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	//gpipeline.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	gpipeline.BlendState.AlphaToCoverageEnable = false;
 	gpipeline.BlendState.IndependentBlendEnable = false;
 	gpipeline.BlendState.RenderTarget->BlendEnable = true;
@@ -465,7 +472,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc = {};
 	rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-	D3D12_DESCRIPTOR_RANGE descTblRange[2] = {};                 //テクスチャと定数の２つ
+	D3D12_DESCRIPTOR_RANGE descTblRange[1] = {};                 //定数の1つ
 	descTblRange[0].NumDescriptors = 1;                          //定数ひとつ
 	descTblRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV; //種別は定数
 	descTblRange[0].BaseShaderRegister = 0;                      //0番スロットから
@@ -641,18 +648,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		////待ち
 		_cmdQueue->Signal(_fence, ++_fenceVal);
 
-		if (_fence->GetCompletedValue() != _fenceVal) {
+		if (_fence->GetCompletedValue() != _fenceVal)
+		{
 			auto event = CreateEvent(nullptr, false, false, nullptr);
 			_fence->SetEventOnCompletion(_fenceVal, event);
 			WaitForSingleObject(event, INFINITE);
 			CloseHandle(event);
 		}
-		_cmdAllocator->Reset();//キューをクリア
-		_cmdList->Reset(_cmdAllocator, _pipelinestate);//再びコマンドリストをためる準備
 
 
 		//フリップ
 		_swapchain->Present(1, 0);
+		_cmdAllocator->Reset();//キューをクリア
+		_cmdList->Reset(_cmdAllocator, _pipelinestate);//再びコマンドリストをためる準備
 
 	}
 	//もうクラス使わんから登録解除してや
