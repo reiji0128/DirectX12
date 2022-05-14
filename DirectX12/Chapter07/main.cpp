@@ -568,6 +568,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	scissorrect.right = scissorrect.left + window_width;   //切り抜き右座標
 	scissorrect.bottom = scissorrect.top + window_height;  //切り抜き下座標
 
+	// シェーダー側に渡すための基本的な行列データ
+	struct MatricesData
+	{
+		XMMATRIX world;       // モデル本体を回転させたり移動させたるする行列
+		XMMATRIX viewproj;    // ビューとプロジェクション合成行列
+	};
+
 	// 定数バッファ作成
 	// ワールド行列
 	auto worldMat = XMMatrixRotationY(XM_PIDIV4);
@@ -586,7 +593,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	);
 	ID3D12Resource* constBuff = nullptr;
 	heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	resDesc = CD3DX12_RESOURCE_DESC::Buffer((sizeof(XMMATRIX) + 0xff) & ~0xff);
+	resDesc = CD3DX12_RESOURCE_DESC::Buffer((sizeof(MatricesData) + 0xff) & ~0xff);
 	result = _dev->CreateCommittedResource(
 		&heapProp,
 		D3D12_HEAP_FLAG_NONE,
@@ -596,9 +603,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		IID_PPV_ARGS(&constBuff)
 	);
 
-	XMMATRIX* mapMatrix;//マップ先を示すポインタ
-	result = constBuff->Map(0, nullptr, (void**)&mapMatrix);//マップ
-	*mapMatrix = worldMat * viewMat * projMat;
+	MatricesData* mapMatrix;                                      //マップ先を示すポインタ
+	result = constBuff->Map(0, nullptr, (void**)&mapMatrix);  //マップ
+	// 行列の内容をコピー
+	mapMatrix->world = worldMat;
+	mapMatrix->viewproj = viewMat * projMat;
 
 	ID3D12DescriptorHeap* basicDescHeap = nullptr;
 	D3D12_DESCRIPTOR_HEAP_DESC descHeapDesc = {};
@@ -634,7 +643,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		}
 
 		worldMat = XMMatrixRotationY(angle);
-		*mapMatrix = worldMat * viewMat * projMat;
+		mapMatrix->world = worldMat;
+		mapMatrix->viewproj = viewMat * projMat;
 		angle += 0.005f;
 
 
