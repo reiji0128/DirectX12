@@ -206,10 +206,54 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		handle.ptr += _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 	}
 
+// 深度バッファー関連 //
 	// 深度バッファの作成
-	// 深度バッファの仕様
-	//D3D12_RESOURCE_DESC depthResDesc = {};
-	//depthResDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	D3D12_RESOURCE_DESC depthResDesc = {};
+	depthResDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;             // 2次元のテクスチャデータ
+	depthResDesc.Width = window_width;
+	depthResDesc.Height = window_height;
+	depthResDesc.DepthOrArraySize = 1;                                       // テクスチャ配列でも、3Dテクスチャでもない
+	depthResDesc.Format = DXGI_FORMAT_D32_FLOAT;                             // 深度値書き込み用フォーマット
+	depthResDesc.SampleDesc.Count = 1;                                       // サンプルは1ピクセルあたり1つ
+	depthResDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;            // デプスステンシルとして使用
+
+	// 深度値用ヒーププロパティ
+	D3D12_HEAP_PROPERTIES depthHeapProp = {};
+	depthHeapProp.Type = D3D12_HEAP_TYPE_DEFAULT;                            // DEFAULTなのでUNKWONでよい
+	depthHeapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	depthHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+
+	// このクリアビューが重要な意味を持つ
+	D3D12_CLEAR_VALUE depthClearValue = {};
+	depthClearValue.DepthStencil.Depth = 1.0f;                               // 深さ1.0fでクリア
+	depthClearValue.Format = DXGI_FORMAT_D32_FLOAT;                          // 32ビットfloat値としてクリア
+
+	ID3D12Resource* depthBuffer = nullptr;
+	result = _dev->CreateCommittedResource(
+		&depthHeapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&depthResDesc,
+		D3D12_RESOURCE_STATE_DEPTH_WRITE,                    // 震度地書き込み用に使用
+		&depthClearValue,
+		IID_PPV_ARGS(&depthBuffer));
+
+	// 深度のためのディスクリプタヒープ
+	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
+	dsvHeapDesc.NumDescriptors = 1;                          // 深度ビューは1つ
+	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;       // デプスステンシルビューとして使う
+	ID3D12DescriptorHeap* dsvHeap = nullptr;
+	result = _dev->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&dsvHeap));
+
+	// 深度ビュー作成
+	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+	dsvDesc.Format = DXGI_FORMAT_D32_FLOAT;                  // 深度値に32ビットしよう
+	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;   // 2Dテクスチャ
+	dsvDesc.Flags = D3D12_DSV_FLAG_NONE;                     // フラグは特になし
+	_dev->CreateDepthStencilView(
+		depthBuffer,
+		&dsvDesc,
+		dsvHeap->GetCPUDescriptorHandleForHeapStart());
+
 
 	ID3D12Fence* _fence = nullptr;
 	UINT64 _fenceVal = 0;
@@ -415,12 +459,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	gpipeline.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;   // 一致させる
 
 	// 深度ステンシル
-	gpipeline.DepthStencilState.DepthEnable = true;//深度
-	gpipeline.DepthStencilState.StencilEnable = false;//あとで
+	gpipeline.DepthStencilState.DepthEnable = true;                            // 深度バッファーを使う
+	gpipeline.DepthStencilState.StencilEnable = false;
 	gpipeline.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-	gpipeline.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
-	gpipeline.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-	
+	gpipeline.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;        // 深度値が小さい方を採用
+	gpipeline.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;   // ピクセル描画時に深度バッファーに深度値を書き込む
 	// ブレンド設定
 	//gpipeline.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	gpipeline.BlendState.AlphaToCoverageEnable = false;
@@ -612,13 +655,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 		//レンダーターゲットを指定
 		auto rtvH = rtvHeaps->GetCPUDescriptorHandleForHeapStart();
 		rtvH.ptr += bbIdx * _dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-
+		auto dsvH = dsvHeap->GetCPUDescriptorHandleForHeapStart();
 
 		_cmdList->ResourceBarrier(1, &BarrierDesc);
-		_cmdList->OMSetRenderTargets(1, &rtvH, false, nullptr);
+		_cmdList->OMSetRenderTargets(1, &rtvH, false, &dsvH);
+
 		//画面クリア
 		float clearColor[] = { 1.0f,1.0f,1.0f,1.0f }; // 白色
 		_cmdList->ClearRenderTargetView(rtvH, clearColor, 0, nullptr);
+		// 深度バッファーのクリア
+		_cmdList->ClearDepthStencilView(dsvH, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
 		_cmdList->RSSetViewports(1, &viewport);
 		_cmdList->RSSetScissorRects(1, &scissorrect);
 
