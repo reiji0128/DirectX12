@@ -64,6 +64,110 @@ ID3D12GraphicsCommandList* _cmdList = nullptr;
 ID3D12CommandQueue* _cmdQueue = nullptr;
 IDXGISwapChain4* _swapchain = nullptr;
 
+// モデルのパスとテクスチャのパスから合成パスを得る
+// @param modelPath アプリケーションから見たpmdモデルのパス
+// @param texPath   PMDモデルから見たテクスチャのパス
+std::string GetTexturePathFromModelAndTexPath(const std::string& modelPath,
+	const char* texPath)
+{
+	auto folderPath = modelPath.substr(0, modelPath.rfind('/'));
+	return folderPath + texPath;
+}
+
+// std::string(マルチバイト文字列)からstd::wstring(ワイド文字列)を得る
+// @param str マルチバイト文字列
+// @return    変換されたワイド文字列
+std::wstring GetWideStringFromString(const std::string& str)
+{
+	// 呼び出し1回目(文字列数を得る)
+	auto num1 = MultiByteToWideChar(CP_ACP,
+		                            MB_PRECOMPOSED | MB_ERR_INVALID_CHARS,
+		                            str.c_str(),
+		                            -1,
+		                            nullptr,
+		                            0);
+
+	std::wstring wstr;                       // stringのwchar_t版
+	wstr.resize(num1);                       // 得られた文字列数でリサイズ
+
+	// 呼び出し2回目(確保済みのwstrに変換文字列をコピー)
+	auto num2 = MultiByteToWideChar(CP_ACP,
+		                            MB_PRECOMPOSED | MB_ERR_INVALID_CHARS,
+		                            str.c_str(),
+		                            -1,
+		                            &wstr[0],
+		                            num1);
+
+	assert(num1 == num2);
+	return wstr;
+}
+
+ID3D12Resource* LoadTextureFromFile(std::string& texPath)
+{
+	// WICテクスチャのロード
+	TexMetadata metadata = {};
+	ScratchImage scratchImg = {};
+
+	auto result = LoadFromWICFile(GetWideStringFromString(texPath).c_str(),
+		WIC_FLAGS_NONE,
+		&metadata,
+		scratchImg);
+
+	if (FAILED(result))
+	{
+		return nullptr;
+	}
+
+	auto img = scratchImg.GetImage(0, 0, 0);            // 生データ抽出
+
+	// WriteToSubresourceで転送する用のヒープ設定
+	D3D12_HEAP_PROPERTIES texHeapProp = {};
+	texHeapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
+	texHeapProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
+	texHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
+	texHeapProp.CreationNodeMask = 0;                                        // 単一アダプタのため0
+	texHeapProp.VisibleNodeMask = 0;                                         // 単一アダプタのため0
+
+	D3D12_RESOURCE_DESC resDesc = {};
+	resDesc.Format = metadata.format;
+	resDesc.Width = metadata.width;
+	resDesc.Height = metadata.height;
+	resDesc.DepthOrArraySize = metadata.arraySize;
+	resDesc.SampleDesc.Count = 1;                                            // 通常テクスチャなのでアンチエイジングしない
+	resDesc.SampleDesc.Quality = 0;                                          // クオリティは最低
+	resDesc.MipLevels = metadata.mipLevels;
+	resDesc.Dimension = static_cast<D3D12_RESOURCE_DIMENSION>(metadata.dimension);
+	resDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	resDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+	// バッファー作成
+	ID3D12Resource* texbuff = nullptr;
+	result = _dev->CreateCommittedResource(&texHeapProp,
+		                                   D3D12_HEAP_FLAG_NONE,
+		                                   &resDesc,
+		                                   D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+		                                   nullptr,
+		                                   IID_PPV_ARGS(&texbuff));
+
+	if (FAILED(result))
+	{
+		return nullptr;
+	}
+
+	result = texbuff->WriteToSubresource(0,
+		                                 nullptr,                  // 全領域のコピー
+		                                 img->pixels,              // 元データアドレス
+		                                 img->rowPitch,            // 1ラインサイズ
+		                                 img->slicePitch);         // 全サイズ
+
+	if (FAILED(result))
+	{
+		return nullptr;
+	}
+
+	return texbuff;
+}
+
 void EnableDebugLayer() {
 	ID3D12Debug* debugLayer = nullptr;
 	auto result = D3D12GetDebugInterface(IID_PPV_ARGS(&debugLayer));
@@ -279,7 +383,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	char signature[3] = {};   // シグネチャ
 	PMDHeader pmdheader = {};
 	FILE* fp;
-	auto err = fopen_s(&fp, "Model/初音ミク.pmd", "rb");
+	std::string strModelPath = "Model/初音ミク.pmd";
+	auto fp = fopen(strModelPath.c_str(),"rb");
 
 	fread(signature, sizeof(signature), 1, fp);
 	fread(&pmdheader, sizeof(pmdheader), 1, fp);
