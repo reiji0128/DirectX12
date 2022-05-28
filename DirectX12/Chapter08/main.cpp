@@ -20,6 +20,7 @@
 #pragma comment(lib,"d3dcompiler.lib")
 
 using namespace DirectX;
+using namespace std;
 
 // PMD構造体
 struct PMD_VERTEX
@@ -75,6 +76,28 @@ std::string GetTexturePathFromModelAndTexPath(const std::string& modelPath, cons
 	auto pathIndex = max(pathIndex1, pathIndex2);
 	auto folderPath = modelPath.substr(0, pathIndex + 1);  // 文字列の0番目からpathIndex + 1までの文字を返す(先頭を1として数える)
 	return folderPath + texPath;
+}
+
+// ファイル名から拡張子を取得する
+// @param  path 対象のパス文字列
+// @return 拡張子
+string GetExtension(const string& path)
+{
+	int idx = path.rfind('.');
+	return path.substr(idx + 1, path.length() - idx - 1);
+}
+
+// テクスチャのパスをセパレーター文字で分離する
+// @param  path 対象のパス文字列
+// @param  splitter 区切り文字
+// @return 分離前後の文字列ペア
+pair<string, string> SplitFileName(const string& path, const char splitter = '*')
+{
+	int idx = path.find(splitter);
+	pair<string, string> ret;
+	ret.first = path.substr(0, idx);
+	ret.second = path.substr(idx + 1, path.length() - idx - 1);
+	return ret;
 }
 
 // std::string(マルチバイト文字列)からstd::wstring(ワイド文字列)を得る
@@ -362,7 +385,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	}
 
 	// 深度バッファー関連 //
-		// 深度バッファの作成
+	// 深度バッファの作成
 	D3D12_RESOURCE_DESC depthResDesc = {};
 	depthResDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;             // 2次元のテクスチャデータ
 	depthResDesc.Width = window_width;
@@ -435,7 +458,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	char signature[3] = {};   // シグネチャ
 	PMDHeader pmdheader = {};
 	FILE* fp;
-	std::string strModelPath = "Model/初音ミク.pmd";
+	std::string strModelPath = "Model/巡音ルカ.pmd";
 	fopen_s(&fp,strModelPath.c_str(),"rb");
 
 	fread(signature, sizeof(signature), 1, fp);
@@ -533,7 +556,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	fread(pmdMaterials.data(), pmdMaterials.size() * sizeof(PMDMaterial), 1, fp);  // 一気に書き込む
 
 	// マテリアルオブジェクトの作成と設定
-	std::vector<Material> materials(pmdMaterials.size());
+	vector<Material> materials(pmdMaterials.size());
 	for (int i = 0; i < pmdMaterials.size(); ++i)
 	{
 		materials[i].indicesNum           = pmdMaterials[i].indicesNum;
@@ -546,16 +569,28 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	for (int i = 0; i < pmdMaterials.size(); ++i)
 	{
-		if (strlen(pmdMaterials[i].texFilePath) == 0)
+		std::string texFileName = pmdMaterials[i].texFilePath;
+
+		if (count(texFileName.begin(), texFileName.end(), '*') > 0)
 		{
-			textureResources[i] = nullptr;
+			// スプリッタがある
+			auto namepair = SplitFileName(texFileName);
+			if (GetExtension(namepair.first) == "sph" || GetExtension(namepair.first) == "spa")
+			{
+				texFileName = namepair.second;
+			}
+			else
+			{
+				texFileName = namepair.first;
+			}
 		}
-
 		// モデルとテクスチャパスからアプリケーションからのテクスチャパスを得る
-		auto texFilePath = GetTexturePathFromModelAndTexPath(strModelPath, pmdMaterials[i].texFilePath);
-
+		auto texFilePath = GetTexturePathFromModelAndTexPath(strModelPath, texFileName.c_str());
 		textureResources[i] = LoadTextureFromFile(texFilePath);
+
 	}
+
+	
 
 	fclose(fp);
 
