@@ -551,7 +551,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	fread(&materialNum, sizeof(materialNum), 1, fp);
 	std::vector<PMDMaterial> pmdMaterials(materialNum);
 
-	std::vector<ID3D12Resource*> textureResources(materialNum);
+	vector<ID3D12Resource*> textureResources(materialNum);
+	vector<ID3D12Resource*> sphResources(materialNum);         // 乗算スフィアマップ
 
 	fread(pmdMaterials.data(), pmdMaterials.size() * sizeof(PMDMaterial), 1, fp);  // 一気に書き込む
 
@@ -569,25 +570,49 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
 	for (int i = 0; i < pmdMaterials.size(); ++i)
 	{
-		std::string texFileName = pmdMaterials[i].texFilePath;
+		string texFileName = pmdMaterials[i].texFilePath;
+		string sphFileName = "";
+		string spaFileName = "";
 
 		if (count(texFileName.begin(), texFileName.end(), '*') > 0)
 		{
 			// スプリッタがある
 			auto namepair = SplitFileName(texFileName);
-			if (GetExtension(namepair.first) == "sph" || GetExtension(namepair.first) == "spa")
+			if (GetExtension(namepair.first) == "sph")
 			{
 				texFileName = namepair.second;
+				sphFileName = namepair.first;
+
+			}
+			else if(GetExtension(namepair.first) == "spa")
+			{
+				texFileName = namepair.second;
+				spaFileName = namepair.first;
 			}
 			else
 			{
 				texFileName = namepair.first;
+				if (GetExtension(namepair.second) == "sph")
+				{
+					sphFileName = namepair.second;
+				}
+				else if (GetExtension(namepair.first) == "spa")
+				{
+					spaFileName = namepair.second;
+				}
 			}
 		}
 		// モデルとテクスチャパスからアプリケーションからのテクスチャパスを得る
-		auto texFilePath = GetTexturePathFromModelAndTexPath(strModelPath, texFileName.c_str());
-		textureResources[i] = LoadTextureFromFile(texFilePath);
-
+		if (texFileName != "")
+		{
+			auto texFilePath = GetTexturePathFromModelAndTexPath(strModelPath, texFileName.c_str());
+			textureResources[i] = LoadTextureFromFile(texFilePath);
+		}
+		if (sphFileName != "")
+		{
+			auto sphFielPath = GetTexturePathFromModelAndTexPath(strModelPath, sphFileName.c_str());
+			sphResources[i] = LoadTextureFromFile(sphFielPath);
+		}
 	}
 
 	
@@ -649,7 +674,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 	D3D12_DESCRIPTOR_HEAP_DESC matDescHeapDesc = {};
 	matDescHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	matDescHeapDesc.NodeMask = 0;
-	matDescHeapDesc.NumDescriptors = materialNum * 2;               // マテリアル数 * 2 を指定
+	matDescHeapDesc.NumDescriptors = materialNum * 3;               // マテリアル数 * 3 を指定
 	matDescHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	result = _dev->CreateDescriptorHeap(&matDescHeapDesc, IID_PPV_ARGS(&materialDescHeap));
 
